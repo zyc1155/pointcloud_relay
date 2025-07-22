@@ -4,29 +4,16 @@ project(pointcloud_relay)
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   sensor_msgs
-  std_msgs
   pcl_ros
   pcl_conversions
-  message_generation
-)
-
-add_service_files(
-  FILES
-  SetRun.srv
-)
-
-generate_messages(
-  DEPENDENCIES
-  std_msgs
+  std_srvs
 )
 
 
 catkin_package(
 #  INCLUDE_DIRS include
 #  LIBRARIES pointcloud_relay
- CATKIN_DEPENDS roscpp sensor_msgs std_msgs pcl_ros pcl_conversions message_runtime
-#  DEPENDS system_lib
-)
+ CATKIN_DEPENDS roscpp sensor_msgs std_srvs pcl_ros pcl_conversions)
 
 include_directories(
 # include

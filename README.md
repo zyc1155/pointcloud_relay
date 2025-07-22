@@ -7,7 +7,7 @@ Launching node through
 ```sh
 roslaunch pointcloud_relay relay.launch input_topic:=<your_input_topic> output_topic:=<your_output_topic> output_frame:=<your_output_frame>
 ```
-Pausing the publishing by
+Capture the publishing message by
 ```sh
-rosservice call /set_run "run: false"
+rosservice call /pointcloud_relay/capture_pointcloud
 ```
