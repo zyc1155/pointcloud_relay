@@ -1,0 +1,9 @@
+<launch>
+  <!-- Node to relay and modify point cloud -->
+  <node name="pointcloud_relay" pkg="pointcloud_relay" type="pointcloud_relay_node" output="screen">
+    <!-- Set parameters -->
+    <param name="input_topic" value="/points/raw"/>
+    <param name="output_topic" value="/points/filterd"/>
+    <param name="output_frame" value="control/hrp5_p/azure_depth_frame"/>
+  </node>
+</launch>
