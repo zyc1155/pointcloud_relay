@@ -65,10 +65,9 @@ private:
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_in(new pcl::PointCloud<pcl::PointXYZRGB>);
         pcl::fromROSMsg(*msg, *cloud_in);
 
+        Eigen::Affine3f tf_eigen = tf2::transformToEigen(tf_msg).cast<float>();
         // Apply rotation only
-        Eigen::Affine3d tf_eigen = tf2::transformToEigen(tf_msg);
-        Eigen::Affine3f rot_only = Eigen::Affine3f::Identity();
-        rot_only.linear() = tf_eigen.linear().cast<float>(); // rotation only
+        Eigen::Affine3f rot_only(tf_eigen.rotation());
 
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_rotated(new pcl::PointCloud<pcl::PointXYZRGB>);
         pcl::transformPointCloud(*cloud_in, *cloud_rotated, rot_only);
@@ -108,11 +107,7 @@ private:
         }
 
         // Apply translation after filtering
-        Eigen::Translation3f translation(
-            tf_msg.transform.translation.x,
-            tf_msg.transform.translation.y,
-            tf_msg.transform.translation.z);
-        Eigen::Affine3f trans_only(translation);
+        Eigen::Affine3f trans_only(Eigen::Translation3f(tf_eigen.translation()));
 
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_final(new pcl::PointCloud<pcl::PointXYZRGB>);
         pcl::transformPointCloud(*downsampled, *cloud_final, trans_only);

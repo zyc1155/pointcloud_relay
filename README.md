@@ -1,7 +1,7 @@
 # pointcloud_relay
 Installing dependencies in Ubuntu if necessary:
 ```sh
-sudo apt install ros-${ROS_DISTRO}-tf2-sensor-msgs ros-${ROS_DISTRO}-pcl-ros ros-${ROS_DISTRO}-pcl-conversions
+sudo apt install ros-${ROS_DISTRO}-pcl-ros ros-${ROS_DISTRO}-pcl-conversions
 ```
 Launching node through
 ```sh
