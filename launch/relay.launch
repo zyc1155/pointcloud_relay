@@ -1,11 +1,13 @@
 <launch>
   <arg name="input_topic" default="/points/raw"/>
   <arg name="output_topic" default="/points/filterd"/>
-  <arg name="output_frame" default="control/hrp5_p/azure_depth_frame"/>
+  <arg name="input_frame" default="control/hrp5_p/azure_depth_frame"/>
+  <arg name="output_frame" default="robot_map"/>
   
-  <node name="pointcloud_relay" pkg="pointcloud_relay" type="pointcloud_relay_node" output="screen">
-    <param name="input_topic" value="$(arg input_topic)"/>
-    <param name="output_topic" value="$(arg output_topic)"/>
-    <param name="output_frame" value="$(arg output_frame)"/>
+    <node name="pointcloud_relay" pkg="pointcloud_relay" type="pointcloud_relay_node" output="screen">
+      <param name="input_topic" value="$(arg input_topic)"/>
+      <param name="output_topic" value="$(arg output_topic)"/>
+      <param name="input_frame" value="$(arg input_frame)"/>
+      <param name="output_frame" value="$(arg output_frame)"/>
   </node>
 </launch>

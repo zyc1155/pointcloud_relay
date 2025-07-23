@@ -1,8 +1,18 @@
 #include <ros/ros.h>
+
+#include <tf2_ros/transform_listener.h>
+#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+
 #include <sensor_msgs/PointCloud2.h>
+#include "geometry_msgs/TransformStamped.h"
+
+#include <pcl_ros/point_cloud.h>
 #include <pcl/point_types.h>
-#include <pcl/point_cloud.h>
 #include <pcl_conversions/pcl_conversions.h>
+#include <pcl/filters/voxel_grid.h>
+#include <pcl/filters/crop_box.h>
+// #include <pcl/filters/statistical_outlier_removal.h>
+
 #include <std_srvs/Trigger.h>
 
 class PointCloudRelay
@@ -13,11 +23,14 @@ public:
         // Parameters
         nh_.param<std::string>("input_topic", input_topic_, "/input_pointcloud");
         nh_.param<std::string>("output_topic", output_topic_, "/output_pointcloud");
-        nh_.param<std::string>("output_frame", output_frame_, "modified_frame");
+        nh_.param<std::string>("input_frame", input_frame_, "input_frame");
+        nh_.param<std::string>("output_frame", output_frame_, "output_frame");
 
         // Setup publisher and service clent
         pub_ = nh_.advertise<sensor_msgs::PointCloud2>(output_topic_, 1);
         srv_ = nh_.advertiseService("/pointcloud_relay/capture_pointcloud", &PointCloudRelay::processCallback, this);
+
+        tf_listener = std::make_unique<tf2_ros::TransformListener>(tf_buffer);
 
         ROS_INFO("PointCloudRelay initialized. Listening on [%s], publishing on [%s]", input_topic_.c_str(), output_topic_.c_str());
     }
@@ -27,28 +40,91 @@ private:
     ros::NodeHandle nh_;
     ros::Publisher pub_;
     ros::ServiceServer srv_;
-    std::string input_topic_, output_topic_, output_frame_;
+    tf2_ros::Buffer tf_buffer;
+    std::unique_ptr<tf2_ros::TransformListener> tf_listener;
+    std::string input_topic_, output_topic_, input_frame_, output_frame_;
 
     sensor_msgs::PointCloud2 pointCloudFilter(const sensor_msgs::PointCloud2ConstPtr &msg)
     {
 
+        geometry_msgs::TransformStamped tf_msg;
+        try
+        {
+            tf_msg = tf_buffer.lookupTransform(output_frame_, input_frame_, ros::Time(0));
+        }
+        catch (tf2::TransformException &ex)
+        {
+            ROS_WARN_STREAM("TF failed: " << ex.what());
+
+            sensor_msgs::PointCloud2 final_msg = *msg;
+            final_msg.header.stamp = ros::Time::now();
+            final_msg.header.frame_id = input_frame_;
+            return final_msg;
+        }
+
+        geometry_msgs::TransformStamped rot_only = tf_msg;
+        rot_only.transform.translation.x = 0.0;
+        rot_only.transform.translation.y = 0.0;
+        rot_only.transform.translation.z = 0.0;
+
+        sensor_msgs::PointCloud2 rotated_msg;
+        tf2::doTransform(*msg, rotated_msg, rot_only);
+
         // Convert ROS message to PCL
-        pcl::PointCloud<pcl::PointXYZRGB> cloud;
-        pcl::fromROSMsg(*msg, cloud);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::fromROSMsg(rotated_msg, *cloud);
 
-        /* Modify pointcloud here
+        // Crop Box
+        pcl::CropBox<pcl::PointXYZRGB> crop;
+        crop.setInputCloud(cloud);
+        crop.setMin(Eigen::Vector4f(0.0, -0.5, -2.0, 1.0));
+        crop.setMax(Eigen::Vector4f(2.0, 0.5, 0.0, 1.0));
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropped(new pcl::PointCloud<pcl::PointXYZRGB>);
+        crop.filter(*cropped);
 
-        */
+        // VoxelGrid Downsample
+        pcl::VoxelGrid<pcl::PointXYZRGB> voxel;
+        voxel.setInputCloud(cropped);
+        voxel.setLeafSize(0.02f, 0.02f, 0.02f);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
+        voxel.filter(*downsampled);
+
+        // Color by height (Z)
+        float z_min = std::numeric_limits<float>::max(), z_max = -std::numeric_limits<float>::max();
+        for (const auto &pt : downsampled->points)
+        {
+            if (!std::isnan(pt.z))
+            {
+                z_min = std::min(z_min, pt.z);
+                z_max = std::max(z_max, pt.z);
+            }
+        }
+        for (auto &pt : downsampled->points)
+        {
+            float ratio = (pt.z - z_min) / (z_max - z_min + 1e-6f);
+            pt.r = static_cast<uint8_t>(255 * ratio);
+            pt.g = 0;
+            pt.b = static_cast<uint8_t>(255 * (1 - ratio));
+        }
 
         // Convert back to ROS message
-        sensor_msgs::PointCloud2 modified_msg;
-        pcl::toROSMsg(cloud, modified_msg);
+        sensor_msgs::PointCloud2 filtered_msg;
+        pcl::toROSMsg(*downsampled, filtered_msg);
+
+        geometry_msgs::TransformStamped trans_only = tf_msg;
+        trans_only.transform.rotation.x = 0.0;
+        trans_only.transform.rotation.y = 0.0;
+        trans_only.transform.rotation.z = 0.0;
+        trans_only.transform.rotation.w = 1.0;
+
+        sensor_msgs::PointCloud2 final_msg;
+        tf2::doTransform(filtered_msg, final_msg, trans_only);
 
         // Modify header
-        modified_msg.header.stamp = ros::Time::now();
-        modified_msg.header.frame_id = output_frame_;
+        final_msg.header.stamp = ros::Time::now();
+        final_msg.header.frame_id = output_frame_;
 
-        return modified_msg;
+        return final_msg;
     }
 
     bool processCallback(std_srvs::Trigger::Request &req,
