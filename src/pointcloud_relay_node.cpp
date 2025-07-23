@@ -1,7 +1,7 @@
 #include <ros/ros.h>
 
 #include <tf2_ros/transform_listener.h>
-#include <tf2_sensor_msgs/tf2_sensor_msgs.h>
+#include <tf2_eigen/tf2_eigen.h>
 
 #include <sensor_msgs/PointCloud2.h>
 #include "geometry_msgs/TransformStamped.h"
@@ -55,41 +55,41 @@ private:
         catch (tf2::TransformException &ex)
         {
             ROS_WARN_STREAM("TF failed: " << ex.what());
-
             sensor_msgs::PointCloud2 final_msg = *msg;
             final_msg.header.stamp = ros::Time::now();
             final_msg.header.frame_id = input_frame_;
             return final_msg;
         }
 
-        geometry_msgs::TransformStamped rot_only = tf_msg;
-        rot_only.transform.translation.x = 0.0;
-        rot_only.transform.translation.y = 0.0;
-        rot_only.transform.translation.z = 0.0;
+        // Convert msg to PCL
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_in(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::fromROSMsg(*msg, *cloud_in);
 
-        sensor_msgs::PointCloud2 rotated_msg;
-        tf2::doTransform(*msg, rotated_msg, rot_only);
+        // Apply rotation only
+        Eigen::Affine3d tf_eigen = tf2::transformToEigen(tf_msg);
+        Eigen::Affine3f rot_only = Eigen::Affine3f::Identity();
+        rot_only.linear() = tf_eigen.linear().cast<float>(); // rotation only
 
-        // Convert ROS message to PCL
-        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
-        pcl::fromROSMsg(rotated_msg, *cloud);
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_rotated(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::transformPointCloud(*cloud_in, *cloud_rotated, rot_only);
 
         // Crop Box
         pcl::CropBox<pcl::PointXYZRGB> crop;
-        crop.setInputCloud(cloud);
+        crop.setInputCloud(cloud_rotated);
         crop.setMin(Eigen::Vector4f(0.0, -0.5, -2.0, 1.0));
         crop.setMax(Eigen::Vector4f(2.0, 0.5, 0.0, 1.0));
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr cropped(new pcl::PointCloud<pcl::PointXYZRGB>);
         crop.filter(*cropped);
 
-        // VoxelGrid Downsample
+        float leafsize = 0.05;
+        // Downsample
         pcl::VoxelGrid<pcl::PointXYZRGB> voxel;
         voxel.setInputCloud(cropped);
-        voxel.setLeafSize(0.02f, 0.02f, 0.02f);
+        voxel.setLeafSize(leafsize, leafsize, leafsize);
         pcl::PointCloud<pcl::PointXYZRGB>::Ptr downsampled(new pcl::PointCloud<pcl::PointXYZRGB>);
         voxel.filter(*downsampled);
 
-        // Color by height (Z)
+        // Color by height
         float z_min = std::numeric_limits<float>::max(), z_max = -std::numeric_limits<float>::max();
         for (const auto &pt : downsampled->points)
         {
@@ -107,23 +107,21 @@ private:
             pt.b = static_cast<uint8_t>(255 * (1 - ratio));
         }
 
-        // Convert back to ROS message
-        sensor_msgs::PointCloud2 filtered_msg;
-        pcl::toROSMsg(*downsampled, filtered_msg);
+        // Apply translation after filtering
+        Eigen::Translation3f translation(
+            tf_msg.transform.translation.x,
+            tf_msg.transform.translation.y,
+            tf_msg.transform.translation.z);
+        Eigen::Affine3f trans_only(translation);
 
-        geometry_msgs::TransformStamped trans_only = tf_msg;
-        trans_only.transform.rotation.x = 0.0;
-        trans_only.transform.rotation.y = 0.0;
-        trans_only.transform.rotation.z = 0.0;
-        trans_only.transform.rotation.w = 1.0;
+        pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud_final(new pcl::PointCloud<pcl::PointXYZRGB>);
+        pcl::transformPointCloud(*downsampled, *cloud_final, trans_only);
 
+        // Convert back to ROS
         sensor_msgs::PointCloud2 final_msg;
-        tf2::doTransform(filtered_msg, final_msg, trans_only);
-
-        // Modify header
+        pcl::toROSMsg(*cloud_final, final_msg);
         final_msg.header.stamp = ros::Time::now();
         final_msg.header.frame_id = output_frame_;
-
         return final_msg;
     }
 

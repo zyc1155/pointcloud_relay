@@ -6,7 +6,7 @@ find_package(catkin REQUIRED COMPONENTS
   sensor_msgs
   geometry_msgs
   tf2_ros
-  tf2_sensor_msgs
+  tf2_eigen
   pcl_ros
   pcl_conversions
   std_srvs
@@ -16,7 +16,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package( 
 #  INCLUDE_DIRS include
 #  LIBRARIES pointcloud_relay
- CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs tf2_ros tf2_sensor_msgs std_srvs pcl_ros pcl_conversions)
+ CATKIN_DEPENDS roscpp sensor_msgs geometry_msgs tf2_ros tf2_eigen std_srvs pcl_ros pcl_conversions)
 
 include_directories(
 # include
